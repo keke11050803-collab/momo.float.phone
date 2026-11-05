@@ -156,8 +156,8 @@ export function StickerPanel({ onSend, characterId, characterIds }: StickerPanel
             if (cancelled) return;
             const next: Record<string, string> = {};
             for (const [packId, map] of entries) {
-                for (const [name, url] of Object.entries(map)) {
-                    next[`${packId}:${name}`] = url;
+                for (const [key, url] of Object.entries(map)) {
+                    next[`${packId}:${key}`] = url;
                 }
             }
             setPackUrlMap(next);
@@ -190,7 +190,7 @@ export function StickerPanel({ onSend, characterId, characterIds }: StickerPanel
                     </div>
                 )}
                 {activePack?.stickers.map(sticker => {
-                    const url = packUrlMap[`${activePack.id}:${sticker.name}`];
+                    const url = packUrlMap[`${activePack.id}:${sticker.id}`] || packUrlMap[`${activePack.id}:${sticker.name}`];
                     return (
                         <button
                             key={`${activePack.id}:${sticker.id}`}

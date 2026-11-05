@@ -886,19 +886,9 @@ function BatchAddStickerDialog({
     })));
     const numberNames = () => setRows(prev => prev.map((r, i) => ({ ...r, name: `表情${i + 1}` })));
 
-    // 名称查重：本批内 + 与已有表情
-    const nameCounts = useMemo(() => {
-        const m = new Map<string, number>();
-        rows.forEach(r => { const k = r.name.trim().toLowerCase(); if (k) m.set(k, (m.get(k) ?? 0) + 1); });
-        return m;
-    }, [rows]);
-
     const rowError = (r: BatchRow): string | null => {
         const t = r.name.trim();
         if (!t) return "名称不能为空";
-        const k = t.toLowerCase();
-        if (existingNames.current.has(k)) return "与已有表情重名";
-        if ((nameCounts.get(k) ?? 0) > 1) return "本批重名";
         if (r.file) return checkStickerBlob(r.file);
         return null;
     };

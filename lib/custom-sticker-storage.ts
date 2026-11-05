@@ -264,12 +264,16 @@ export function getCharacterPackIds(characterId: string): string[] {
     return result;
 }
 
-/** Get sticker packs assigned to any of these characters, preserving the user's pack order. */
+/** Get sticker packs assigned to any of these characters, preserving the user's pack order.
+ * 第一个分组作为默认/通用表情包组，即使未单独绑定角色，在所有聊天中也均可见。 */
 export function loadStickerPacksForCharacters(characterIds: string[]): StickerPack[] {
+    const packs = readPacks();
+    if (packs.length === 0) return [];
     const ids = new Set(characterIds.filter(Boolean));
-    if (ids.size === 0) return [];
     const assignments = readAssignments();
-    return readPacks().filter(pack => {
+    const firstPackId = packs[0]?.id;
+    return packs.filter((pack, idx) => {
+        if (idx === 0 || pack.id === firstPackId) return true;
         const assignedIds = assignments[pack.id] ?? [];
         return assignedIds.some(id => ids.has(id));
     });
@@ -277,15 +281,18 @@ export function loadStickerPacksForCharacters(characterIds: string[]): StickerPa
 
 // ── Character-facing API (used by engines, renderer, emoji panel) ──
 
-/** Aggregate all stickers from packs assigned to this character. */
+/** Aggregate all stickers from packs assigned to this character.
+ * 第一个分组对全部角色默认生效。 */
 export function loadCustomStickers(characterId: string): StickerItem[] {
-    const packIds = getCharacterPackIds(characterId);
-    if (packIds.length === 0) return [];
     const packs = readPacks();
+    if (packs.length === 0) return [];
+    const packIds = new Set(getCharacterPackIds(characterId));
+    if (packs[0]) packIds.add(packs[0].id);
     const result: StickerItem[] = [];
-    for (const pid of packIds) {
-        const pack = packs.find(p => p.id === pid);
-        if (pack) result.push(...pack.stickers);
+    for (const pack of packs) {
+        if (packIds.has(pack.id)) {
+            result.push(...pack.stickers);
+        }
     }
     return result;
 }
@@ -331,17 +338,19 @@ export async function resolveCustomStickerMap(characterId: string): Promise<Reco
     return result;
 }
 
-/** Resolve all sticker URLs for a pack → { name: dataUrl }. */
+/** Resolve all sticker URLs for a pack → { [stickerId]: dataUrl, [name]: dataUrl }. 支持重名 */
 export async function resolvePackStickerMap(pack: StickerPack): Promise<Record<string, string>> {
     if (pack.stickers.length === 0) return {};
     const assetIds = pack.stickers.filter(s => s.assetId).map(s => s.assetId);
     const assetMap = assetIds.length > 0 ? await getThemeAssetMap(assetIds) : {};
     const result: Record<string, string> = {};
     for (const s of pack.stickers) {
-        if (s.externalUrl) {
-            result[s.name] = s.externalUrl;
-        } else if (assetMap[s.assetId]) {
-            result[s.name] = assetMap[s.assetId];
+        const url = s.externalUrl || assetMap[s.assetId] || "";
+        if (url) {
+            result[s.id] = url;
+            if (!result[s.name]) {
+                result[s.name] = url;
+            }
         }
     }
     return result;

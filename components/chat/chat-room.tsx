@@ -5309,6 +5309,33 @@ export function ChatRoom({ session, onBack, onDeleted, onUserMessageSent, contac
                     {m.mediaType === "audio" && m.mediaData?.label && (
                         <button onClick={() => { setVoiceTextIds(prev => { const next = new Set(prev); if (next.has(m.id)) next.delete(m.id); else next.add(m.id); return next; }); setActiveMessageId(null); }} className="ctx-menu-btn">转文字</button>
                     )}
+                    {m.mediaType === "audio" && (
+                        <button onClick={async () => {
+                            setActiveMessageId(null);
+                            const text = m.mediaData?.label || m.content;
+                            const charId = m.senderCharacterId || session.contactId;
+                            if (!charId || !text) return;
+                            showChatToast("正在重新合成语音...");
+                            try {
+                                const { resolveVoiceConfig, synthesizeSpeech } = await import("@/lib/tts-service");
+                                const vc = resolveVoiceConfig(charId);
+                                if (!vc) throw new Error("未绑定语音配置");
+                                const blob = await synthesizeSpeech(text, vc);
+                                if (!blob) throw new Error("合成失败");
+                                const reader = new FileReader();
+                                reader.onload = async () => {
+                                    const dataUrl = reader.result as string;
+                                    const { persistMessageVoiceAudio } = await import("@/lib/chat-storage");
+                                    await persistMessageVoiceAudio(storedMessageId, dataUrl, text);
+                                    syncMessagesFromStorage();
+                                    showChatToast("语音已重新合成");
+                                };
+                                reader.readAsDataURL(blob);
+                            } catch (err: any) {
+                                showChatToast(err?.message || "重试失败");
+                            }
+                        }} className="ctx-menu-btn">语音重试</button>
+                    )}
                     {m.role === "user" && (
                         <button onClick={() => handleRetractMessage(storedMessageId)} className="ctx-menu-btn">撤回消息</button>
                     )}
