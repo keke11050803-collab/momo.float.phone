@@ -282,12 +282,11 @@ export function loadStickerPacksForCharacters(characterIds: string[]): StickerPa
 // ── Character-facing API (used by engines, renderer, emoji panel) ──
 
 /** Aggregate all stickers from packs assigned to this character.
- * 第一个分组对全部角色默认生效。 */
+ * 仅包含显式绑定到该角色的表情包组；未绑定的角色不可使用（包括第一组）。 */
 export function loadCustomStickers(characterId: string): StickerItem[] {
     const packs = readPacks();
     if (packs.length === 0) return [];
     const packIds = new Set(getCharacterPackIds(characterId));
-    if (packs[0]) packIds.add(packs[0].id);
     const result: StickerItem[] = [];
     for (const pack of packs) {
         if (packIds.has(pack.id)) {
