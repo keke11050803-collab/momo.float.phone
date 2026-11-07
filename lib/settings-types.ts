@@ -183,6 +183,8 @@ export type VoiceApiConfig = {
     speechSpeed?: number;
     /** Minimax voice_setting.pitch（半音，±12）。缺省保持旧行为（0，原声）。 */
     speechPitch?: number;
+    /** Minimax voice_setting.vol（音量大小，范围 (0, 10]，1.0 为正常音量）。 */
+    speechVolume?: number;
     customVoices?: { id: string; name: string; createdAt?: number }[];
     enableSTT: boolean;
     enableTTS: boolean;
