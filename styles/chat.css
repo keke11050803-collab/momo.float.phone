@@ -658,6 +658,33 @@
   background: color-mix(in srgb, var(--c-card) 60%, transparent);
 }
 
+.chat-quote-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  background: color-mix(in srgb, var(--c-card) 85%, transparent);
+  border: 1px solid var(--c-input-border);
+  border-left: 3.5px solid var(--c-icon-active, #07c160);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: modalFadeIn 0.18s ease-out;
+}
+
+.chat-quote-bar .chat-quote-bar-text {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(12px * var(--app-text-scale, 1));
+  color: var(--c-text-title);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-theater-mode-strip {
   position: relative;
   display: grid;

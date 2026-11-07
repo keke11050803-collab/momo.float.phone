@@ -796,11 +796,20 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                 </div>
             )}
             {quotingMessage && (
-                <div className="chat-quote-bar">
-                    <div className="flex-1 ts-12 text-[var(--c-icon)] overflow-hidden text-ellipsis whitespace-nowrap">
-                        引用 {quotingMessage.role === "user" ? "你" : characterName}: {quotingMessage.content.slice(0, 40)}
+                <div className="chat-quote-bar" role="status" aria-label="引用回复预览">
+                    <div className="chat-quote-bar-text">
+                        <span className="font-medium text-[var(--c-icon-active,currentColor)] mr-1">
+                            {quotingMessage.role === "user" ? "你" : characterName}:
+                        </span>
+                        <span>{quotingMessage.content.slice(0, 80)}</span>
                     </div>
-                    <button onClick={onClearQuote} className="ui-bare-btn text-[var(--c-icon)] ts-16 leading-none p-[2px]">✕</button>
+                    <button
+                        type="button"
+                        onClick={onClearQuote}
+                        className="ui-bare-btn text-[var(--c-icon)] ts-16 leading-none p-[2px] hover:opacity-80"
+                        aria-label="取消引用"
+                        title="取消引用"
+                    >✕</button>
                 </div>
             )}
 
@@ -5283,78 +5292,127 @@ export function ChatRoom({ session, onBack, onDeleted, onUserMessageSent, contac
                 style={getContextMenuInitialStyle()}
                 className="ctx-menu chat-floating-ctx-menu flex flex-col items-center gap-[6px] py-[4px] px-0"
                 data-role={m.role}>
-                <div className="flex">
-                    <button onClick={() => {
-                        const text = m.content;
-                        const fallbackCopy = () => {
-                            const ta = document.createElement("textarea");
-                            ta.value = text;
-                            ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0";
-                            document.body.appendChild(ta);
-                            ta.focus();
-                            ta.select();
-                            try { document.execCommand("copy"); } catch {}
-                            document.body.removeChild(ta);
-                        };
-                        if (navigator.clipboard?.writeText) {
-                            navigator.clipboard.writeText(text).catch(fallbackCopy);
-                        } else {
-                            fallbackCopy();
-                        }
-                        setActiveMessageId(null);
-                    }} className="ctx-menu-btn">复制</button>
-                    <button onClick={() => (m.role === "assistant" ? handleEditResponseStart(m) : handleEditMessageStart(m))} className="ctx-menu-btn">
-                        {m.role === "assistant" && (m.rawResponseText || m.editableResponseText) ? "编辑回复" : "编辑"}
-                    </button>
-                    {m.mediaType === "audio" && m.mediaData?.label && (
-                        <button onClick={() => { setVoiceTextIds(prev => { const next = new Set(prev); if (next.has(m.id)) next.delete(m.id); else next.add(m.id); return next; }); setActiveMessageId(null); }} className="ctx-menu-btn">转文字</button>
-                    )}
-                    {m.mediaType === "audio" && (
-                        <button onClick={async () => {
-                            setActiveMessageId(null);
-                            const text = m.mediaData?.label || m.content;
-                            const charId = m.senderCharacterId || session.contactId;
-                            if (!charId || !text) return;
-                            showChatToast("正在重新合成语音...");
-                            try {
-                                const { resolveVoiceConfig, synthesizeSpeech } = await import("@/lib/tts-service");
-                                const vc = resolveVoiceConfig(charId);
-                                if (!vc) throw new Error("未绑定语音配置");
-                                const blob = await synthesizeSpeech(text, vc);
-                                if (!blob) throw new Error("合成失败");
-                                const reader = new FileReader();
-                                reader.onload = async () => {
-                                    const dataUrl = reader.result as string;
-                                    const { persistMessageVoiceAudio } = await import("@/lib/chat-storage");
-                                    await persistMessageVoiceAudio(storedMessageId, dataUrl, text);
-                                    syncMessagesFromStorage();
-                                    showChatToast("语音已重新合成");
+                {m.mediaType === "audio" ? (
+                    <>
+                        <div className="flex">
+                            <button onClick={() => {
+                                const text = m.mediaData?.label || m.content;
+                                const fallbackCopy = () => {
+                                    const ta = document.createElement("textarea");
+                                    ta.value = text;
+                                    ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0";
+                                    document.body.appendChild(ta);
+                                    ta.focus();
+                                    ta.select();
+                                    try { document.execCommand("copy"); } catch {}
+                                    document.body.removeChild(ta);
                                 };
-                                reader.readAsDataURL(blob);
-                            } catch (err: any) {
-                                showChatToast(err?.message || "重试失败");
-                            }
-                        }} className="ctx-menu-btn">语音重试</button>
-                    )}
-                    {m.role === "user" && (
-                        <button onClick={() => handleRetractMessage(storedMessageId)} className="ctx-menu-btn">撤回消息</button>
-                    )}
-                    {m.role === "assistant" && (
-                        <>
-                            <button onClick={() => handleRetry(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">重试以下</button>
-                            <button onClick={() => { setInstructionRetryTargetId(storedMessageId); setInstructionRetryDraft(""); setActiveMessageId(null); }} className="ctx-menu-btn">指令重试</button>
-                        </>
-                    )}
-                </div>
-                <div className="flex">
-                    <button onClick={() => { setQuotingMessage(m); setActiveMessageId(null); }} className="ctx-menu-btn">引用</button>
-                    <button onClick={() => { setActiveMessageId(null); void favoriteStoredMessages([storedMessageId]); }} className="ctx-menu-btn">收藏</button>
-                    {options?.allowMultiSelect !== false && (
-                        <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn">多选</button>
-                    )}
-                    <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
-                    <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除以下</button>
-                </div>
+                                if (navigator.clipboard?.writeText) {
+                                    navigator.clipboard.writeText(text).catch(fallbackCopy);
+                                } else {
+                                    fallbackCopy();
+                                }
+                                setActiveMessageId(null);
+                            }} className="ctx-menu-btn">复制</button>
+                            <button onClick={() => (m.role === "assistant" ? handleEditResponseStart(m) : handleEditMessageStart(m))} className="ctx-menu-btn">
+                                编辑
+                            </button>
+                            {m.mediaData?.label && (
+                                <button onClick={() => { setVoiceTextIds(prev => { const next = new Set(prev); if (next.has(m.id)) next.delete(m.id); else next.add(m.id); return next; }); setActiveMessageId(null); }} className="ctx-menu-btn">转文字</button>
+                            )}
+                            <button onClick={async () => {
+                                setActiveMessageId(null);
+                                const text = m.mediaData?.label || m.content;
+                                const charId = m.senderCharacterId || session.contactId;
+                                if (!charId || !text) return;
+                                showChatToast("正在重新合成语音...");
+                                try {
+                                    const { resolveVoiceConfig, synthesizeSpeech } = await import("@/lib/tts-service");
+                                    const vc = resolveVoiceConfig(charId);
+                                    if (!vc) throw new Error("未绑定语音配置");
+                                    const blob = await synthesizeSpeech(text, vc);
+                                    if (!blob) throw new Error("合成失败");
+                                    const reader = new FileReader();
+                                    reader.onload = async () => {
+                                        const dataUrl = reader.result as string;
+                                        const { persistMessageVoiceAudio } = await import("@/lib/chat-storage");
+                                        await persistMessageVoiceAudio(storedMessageId, dataUrl, text);
+                                        syncMessagesFromStorage();
+                                        showChatToast("语音已重新合成");
+                                    };
+                                    reader.readAsDataURL(blob);
+                                } catch (err: any) {
+                                    showChatToast(err?.message || "重试失败");
+                                }
+                            }} className="ctx-menu-btn">语音重试</button>
+                        </div>
+                        <div className="flex">
+                            {m.role === "user" && (
+                                <button onClick={() => handleRetractMessage(storedMessageId)} className="ctx-menu-btn">撤回消息</button>
+                            )}
+                            {m.role === "assistant" && (
+                                <>
+                                    <button onClick={() => handleRetry(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">重试以下</button>
+                                    <button onClick={() => { setInstructionRetryTargetId(storedMessageId); setInstructionRetryDraft(""); setActiveMessageId(null); }} className="ctx-menu-btn">指令重试</button>
+                                </>
+                            )}
+                            <button onClick={() => { setQuotingMessage(m); setActiveMessageId(null); }} className="ctx-menu-btn">引用</button>
+                            <button onClick={() => { setActiveMessageId(null); void favoriteStoredMessages([storedMessageId]); }} className="ctx-menu-btn">收藏</button>
+                        </div>
+                        <div className="flex">
+                            {options?.allowMultiSelect !== false && (
+                                <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn">多选</button>
+                            )}
+                            <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
+                            <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除以下</button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex">
+                            <button onClick={() => {
+                                const text = m.content;
+                                const fallbackCopy = () => {
+                                    const ta = document.createElement("textarea");
+                                    ta.value = text;
+                                    ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0";
+                                    document.body.appendChild(ta);
+                                    ta.focus();
+                                    ta.select();
+                                    try { document.execCommand("copy"); } catch {}
+                                    document.body.removeChild(ta);
+                                };
+                                if (navigator.clipboard?.writeText) {
+                                    navigator.clipboard.writeText(text).catch(fallbackCopy);
+                                } else {
+                                    fallbackCopy();
+                                }
+                                setActiveMessageId(null);
+                            }} className="ctx-menu-btn">复制</button>
+                            <button onClick={() => (m.role === "assistant" ? handleEditResponseStart(m) : handleEditMessageStart(m))} className="ctx-menu-btn">
+                                {m.role === "assistant" && (m.rawResponseText || m.editableResponseText) ? "编辑回复" : "编辑"}
+                            </button>
+                            {m.role === "user" && (
+                                <button onClick={() => handleRetractMessage(storedMessageId)} className="ctx-menu-btn">撤回消息</button>
+                            )}
+                            {m.role === "assistant" && (
+                                <>
+                                    <button onClick={() => handleRetry(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">重试以下</button>
+                                    <button onClick={() => { setInstructionRetryTargetId(storedMessageId); setInstructionRetryDraft(""); setActiveMessageId(null); }} className="ctx-menu-btn">指令重试</button>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex">
+                            <button onClick={() => { setQuotingMessage(m); setActiveMessageId(null); }} className="ctx-menu-btn">引用</button>
+                            <button onClick={() => { setActiveMessageId(null); void favoriteStoredMessages([storedMessageId]); }} className="ctx-menu-btn">收藏</button>
+                            {options?.allowMultiSelect !== false && (
+                                <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn">多选</button>
+                            )}
+                            <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
+                            <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger">删除以下</button>
+                        </div>
+                    </>
+                )}
                 {(() => {
                     // 聊天插件注册的消息操作菜单项
                     const pluginActions = getChatPluginRuntime().getMessageActions(m);
@@ -6900,6 +6958,12 @@ export function ChatRoom({ session, onBack, onDeleted, onUserMessageSent, contac
             {richModal === "photo" && (
                 <PhotoInputModal
                     onSend={(desc, imageDataUrl) => { setRichModal(null); sendRichMessage("image", { label: desc }, "", imageDataUrl); }}
+                    onBatchSend={(items) => {
+                        setRichModal(null);
+                        items.forEach(item => {
+                            sendRichMessage("image", { label: item.description }, "", item.imageDataUrl);
+                        });
+                    }}
                     onClose={() => setRichModal(null)}
                 />
             )}
