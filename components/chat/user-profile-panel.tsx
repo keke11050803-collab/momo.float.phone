@@ -1618,10 +1618,11 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                             <select
                                 className="text-right border-none outline-none ts-13 text-[var(--c-text)] bg-transparent"
                                 value={tmMode}
-                                onChange={e => setTmMode(e.target.value as "idle" | "once")}
+                                onChange={e => setTmMode(e.target.value as "idle" | "once" | "ai")}
                             >
                                 <option value="idle">长时间没消息时（可重复）</option>
                                 <option value="once">固定时间后（一次）</option>
+                                <option value="ai">由 AI 自主决定（剧情驱动）</option>
                             </select>
                         </div>
                     </div>
@@ -1643,7 +1644,7 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                             </select>
                         </div>
                     </div>
-                    {tmMode === "once" ? (
+                    {tmMode === "once" && (
                         <div className="menu-item">
                             <ProfileSettingsIcon icon={Clock} color={BINDING_ACCENTS.voice} />
                             <div className="menu-label-group">
@@ -1668,7 +1669,8 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                                 </select>
                             </div>
                         </div>
-                    ) : (
+                    )}
+                    {tmMode === "idle" && (
                         <div className="menu-item">
                             <ProfileSettingsIcon icon={Clock} color={BINDING_ACCENTS.voice} />
                             <div className="menu-label-group">
