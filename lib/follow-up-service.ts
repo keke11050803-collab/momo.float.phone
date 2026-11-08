@@ -192,6 +192,14 @@ export function stopFollowUpService() {
  *  Purely anxiety-driven: no anxiety field or below threshold → no follow-up. */
 export function scheduleFollowUp(sessionId: string, count: number, stateValues?: StateValue[]) {
     const config = loadFollowUpConfig();
+    const effectiveMaxFollowUps = config.maxFollowUps ?? 3;
+    if (count >= effectiveMaxFollowUps) {
+        console.log(`[FollowUp] Reached maxFollowUps limit (${count}/${effectiveMaxFollowUps}), not scheduling.`);
+        clearFollowUpSchedule(sessionId);
+        cancelFollowUpBailout(sessionId);
+        return;
+    }
+
     const targetSession = loadChatSessions().find(session => session.id === sessionId);
     if (!targetSession || (config.disableAllCharacters && !config.allowCharacterIds.includes(targetSession.contactId))) {
         clearFollowUpSchedule(sessionId);
@@ -505,13 +513,15 @@ async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?
 
         const nowMs = Date.now();
         const finalSilenceSec = Math.round((nowMs - lastUserTime) / 1000);
+        const isSleeping = loadChatAppSettings().userOnlineStatus === "sleeping";
+        const sleepHint = isSleeping ? "【当前状态】对方目前处于「睡眠中…」状态，已经睡下了。请保持体贴与克制，尽量不要大吵大闹或长篇大论打扰对方睡眠；绝大多数情况下只输出状态值和内心独白/心声便利贴，极少数情况下若实在想念，最多只发一句极轻柔的晚安或拍一拍。" : "";
         const messagesWithHint: ChatMessage[] = [
             ...annotatedMessages,
             {
                 id: `_silence_${nowMs}`,
                 sessionId: session.id,
                 role: "system",
-                content: `[对方没有回复你的消息，距上次回复已过约${finalSilenceSec}秒]`,
+                content: `[对方没有回复你的消息，距上次回复已过约${finalSilenceSec}秒]${sleepHint ? `\n${sleepHint}` : ""}`,
                 status: "sent",
                 createdAt: new Date().toISOString(),
             },
@@ -635,9 +645,22 @@ async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number) {
         backgroundGeneratingSessions.add(session.id);
         window.dispatchEvent(new CustomEvent("followup-started", { detail: { sessionId: session.id } }));
 
+        const isSleeping = loadChatAppSettings().userOnlineStatus === "sleeping";
+        const sleepHintMessage: ChatMessage[] = isSleeping ? [
+            ...latestMessages,
+            {
+                id: `_sleep_${Date.now()}`,
+                sessionId: session.id,
+                role: "system",
+                content: "【当前状态】对方目前处于「睡眠中…」状态，已经睡下了。请保持体贴与克制，尽量不要打扰对方睡眠；绝大多数情况下只输出状态值和内心独白/心声便利贴，极少数情况下若实在想念，最多只发一句极轻柔的晚安或拍一拍。",
+                status: "sent",
+                createdAt: new Date().toISOString(),
+            }
+        ] : latestMessages;
+
         const rounds = await generateBackgroundCompletionRounds(
             session,
-            latestMessages,
+            sleepHintMessage,
             {
                 appTags: ["chat", "text", "idle_wake"],
                 timedWakeElapsedMinutes: elapsedMinutes,

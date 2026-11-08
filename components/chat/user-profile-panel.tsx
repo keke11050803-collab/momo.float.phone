@@ -196,6 +196,9 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
     const [enterToSendEnabled, setEnterToSendEnabled] = useState(false);
     const [callVibrationEnabled, setCallVibrationEnabled] = useState(true);
     const [userStats, setUserStats] = useState({ chats: 0, moments: 0, visitors: 1234 });
+    const [userOnlineStatus, setUserOnlineStatus] = useState<"online" | "sleeping">(() => {
+        return loadChatAppSettings().userOnlineStatus || "online";
+    });
     const [walletSummary, setWalletSummary] = useState(() => {
         const wallet = loadWalletState();
         return {
@@ -428,10 +431,19 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
                             {/* Top Row: Name and Identity Badge */}
                             <div className="flex items-center justify-between w-full mb-0.5">
                                 <div className="ts-22 font-bold text-[var(--c-text-title)] leading-none truncate">{identity?.name || "未设置身份"}</div>
-                                <div className="flex items-center gap-1.5 ts-11 font-medium bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full shrink-0 text-[var(--c-text)] opacity-80">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                                    手机在线
-                                </div>
+                                <button
+                                    type="button"
+                                    className="flex items-center gap-1.5 ts-11 font-medium bg-black/5 dark:bg-white/10 px-2.5 py-0.5 rounded-full shrink-0 text-[var(--c-text)] opacity-90 active:scale-95 transition-transform cursor-pointer"
+                                    title="点击切换状态：手机在线 / 睡眠中…"
+                                    onClick={() => {
+                                        const next = userOnlineStatus === "sleeping" ? "online" : "sleeping";
+                                        setUserOnlineStatus(next);
+                                        saveChatAppSettings({ ...loadChatAppSettings(), userOnlineStatus: next });
+                                    }}
+                                >
+                                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${userOnlineStatus === "sleeping" ? "bg-purple-400" : "bg-blue-400"}`} />
+                                    {userOnlineStatus === "sleeping" ? "睡眠中…" : "手机在线"}
+                                </button>
                             </div>
 
                             {/* Data Stats inline */}

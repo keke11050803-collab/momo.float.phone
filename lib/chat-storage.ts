@@ -380,6 +380,8 @@ export type ChatAppSettings = {
     floatingDockEnabled?: boolean; // 悬浮球贴边半隐藏收拢模式（默认关）
     /** 用剧情 APP 取代聊天输入栏原“线下模式”入口。 */
     storyAsOfflineMode?: boolean;
+    /** 用户当前状态："online"（手机在线，默认） | "sleeping"（睡眠中…） */
+    userOnlineStatus?: "online" | "sleeping";
 };
 
 // ── 聊天提示音配置 ────────────────────────────────────────────────
