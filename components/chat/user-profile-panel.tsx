@@ -1359,6 +1359,9 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
     const [tmUnit, setTmUnit] = useState<"minute" | "hour" | "day">("minute");
     const [tmIdleValue, setTmIdleValue] = useState("5");
     const [tmIdleUnit, setTmIdleUnit] = useState<"minute" | "hour" | "day">("minute");
+    const [tmRangeMin, setTmRangeMin] = useState("15");
+    const [tmRangeMax, setTmRangeMax] = useState("60");
+    const [tmRangeUnit, setTmRangeUnit] = useState<"minute" | "hour">("minute");
     const [tmMaxConsecutive, setTmMaxConsecutive] = useState("3");
     const [tmHint, setTmHint] = useState<string | null>(null);
     const [tmBusy, setTmBusy] = useState(false);
@@ -1422,7 +1425,21 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
         if (tmBusy) return;
         if (!tmCharId) { setTmHint("请选择角色。"); return; }
         let totalMinutes = 30;
-        if (tmMode === "idle") {
+        let minIntervalMinutes: number | undefined;
+        let maxIntervalMinutes: number | undefined;
+
+        if (tmMode === "ai") {
+            const minAmount = Number(tmRangeMin);
+            const maxAmount = Number(tmRangeMax);
+            if (!Number.isFinite(minAmount) || !Number.isFinite(maxAmount) || minAmount <= 0 || maxAmount < minAmount) {
+                setTmHint("请填写有效的自主追发时间区间（最小 ~ 最大）。");
+                return;
+            }
+            const unitMult = tmRangeUnit === "hour" ? 60 : 1;
+            minIntervalMinutes = Math.max(1, Math.round(minAmount * unitMult));
+            maxIntervalMinutes = Math.max(minIntervalMinutes, Math.round(maxAmount * unitMult));
+            totalMinutes = minIntervalMinutes;
+        } else if (tmMode === "idle") {
             const amount = Number(tmIdleValue);
             if (!Number.isFinite(amount) || amount <= 0) { setTmHint("请填写有效的沉默时长。"); return; }
             totalMinutes = Math.max(1, Math.round(amount * UNIT_MS[tmIdleUnit] / 60000));
@@ -1440,6 +1457,8 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
             characterId: tmCharId,
             sessionId: session.id,
             intervalMinutes: totalMinutes,
+            minIntervalMinutes,
+            maxIntervalMinutes,
             intent: "",
             consecutiveCount: 0,
             maxConsecutive,
@@ -1687,6 +1706,40 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                             </div>
                         </div>
                     )}
+                    {tmMode === "ai" && (
+                        <div className="menu-item">
+                            <ProfileSettingsIcon icon={Clock} color={BINDING_ACCENTS.voice} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">追发时间区间</span>
+                                <span className="menu-desc">在该时间范围内由 AI 自主选定时机追发</span>
+                            </div>
+                            <div className="menu-right flex items-center gap-1 ts-13">
+                                <input
+                                    type="number"
+                                    min={1}
+                                    className="w-[46px] text-center border-none outline-none ts-13 text-[var(--c-text)] bg-transparent"
+                                    value={tmRangeMin}
+                                    onChange={e => setTmRangeMin(e.target.value)}
+                                />
+                                <span className="opacity-60">~</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    className="w-[46px] text-center border-none outline-none ts-13 text-[var(--c-text)] bg-transparent"
+                                    value={tmRangeMax}
+                                    onChange={e => setTmRangeMax(e.target.value)}
+                                />
+                                <select
+                                    className="border-none outline-none ts-13 text-[var(--c-text)] bg-transparent"
+                                    value={tmRangeUnit}
+                                    onChange={e => setTmRangeUnit(e.target.value as "minute" | "hour")}
+                                >
+                                    <option value="minute">分钟</option>
+                                    <option value="hour">小时</option>
+                                </select>
+                            </div>
+                        </div>
+                    )}
                     {tmMode === "idle" && (
                         <div className="menu-item">
                             <ProfileSettingsIcon icon={Clock} color={BINDING_ACCENTS.voice} />
@@ -1753,15 +1806,20 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                         <div className="menu-group">
                             {idleRules.map(rule => {
                                 const charName = loadCharacters().find(c => c.id === rule.characterId)?.name ?? "未知角色";
-                                const hours = Math.floor(rule.intervalMinutes / 60);
-                                const minutes = rule.intervalMinutes % 60;
-                                const intervalLabel = `${hours ? `${hours}小时` : ""}${minutes ? `${minutes}分钟` : hours ? "" : "0分钟"}`;
+                                const hasRange = Boolean(rule.minIntervalMinutes && rule.maxIntervalMinutes);
+                                const rangeLabel = hasRange
+                                    ? `${rule.minIntervalMinutes} ~ ${rule.maxIntervalMinutes}分钟`
+                                    : (() => {
+                                        const hours = Math.floor(rule.intervalMinutes / 60);
+                                        const minutes = rule.intervalMinutes % 60;
+                                        return `${hours ? `${hours}小时` : ""}${minutes ? `${minutes}分钟` : hours ? "" : "0分钟"}`;
+                                    })();
                                 const maxLimit = rule.maxConsecutive ?? IDLE_RECONNECT_MAX_CONSECUTIVE;
                                 return (
                                     <div key={rule.id} className="menu-item">
                                         <div className="menu-label-group" style={{ minWidth: 0, flex: 1 }}>
-                                            <span className="menu-label">{charName} · 沉默超过 {intervalLabel}（连发 {rule.consecutiveCount}/{maxLimit}）</span>
-                                            <span className="menu-desc" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>长时间没消息时主动来找你</span>
+                                            <span className="menu-label">{charName} · {hasRange ? `自主区间 ${rangeLabel}` : `沉默超过 ${rangeLabel}`}（连发 {rule.consecutiveCount}/{maxLimit}）</span>
+                                            <span className="menu-desc" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hasRange ? "AI 在区间内自主挑选时机追发" : "长时间没消息时主动来找你"}</span>
                                         </div>
                                         <button className="ui-btn ui-btn-outline py-1 px-3 ts-12" style={{ whiteSpace: "nowrap", color: "var(--c-danger)" }} onClick={() => handleDeleteIdleRule(rule)}>删除</button>
                                     </div>
