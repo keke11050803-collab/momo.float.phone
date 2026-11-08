@@ -456,7 +456,9 @@ function pollMenstrualPeriodCare(now: number) {
 }
 
 async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?: number }) {
-    if (sched.count >= MAX_FOLLOW_UPS) {
+    const currentFollowUpConfig = loadFollowUpConfig();
+    const effectiveMaxFollowUps = currentFollowUpConfig.maxFollowUps ?? 3;
+    if (sched.count >= effectiveMaxFollowUps) {
         clearFollowUpSchedule(sched.sessionId);
         return;
     }
@@ -548,7 +550,7 @@ async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?
         // 不用前缀删，避免误删 scheduleFollowUp 马上要挂的下一轮）
         cancelFollowUpBailout(session.id, count);
 
-        if (hasVisible && newCount < MAX_FOLLOW_UPS) {
+        if (hasVisible && newCount < effectiveMaxFollowUps) {
             scheduleFollowUp(session.id, newCount, stateValues);
         }
 
@@ -598,7 +600,8 @@ function pollIdleReconnect(now: number) {
         const lastUserAt = new Date(lastUser.createdAt).getTime();
 
         const effectiveConsecutive = rule.lastFiredAt && rule.lastFiredAt > lastUserAt ? rule.consecutiveCount : 0;
-        if (effectiveConsecutive >= IDLE_RECONNECT_MAX_CONSECUTIVE) continue;
+        const maxLimit = rule.maxConsecutive ?? IDLE_RECONNECT_MAX_CONSECUTIVE;
+        if (effectiveConsecutive >= maxLimit) continue;
 
         const intervalMs = Math.max(1, rule.intervalMinutes) * 60_000;
         const nextDueAt = Math.max(
@@ -663,7 +666,8 @@ async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number) {
 
         // 下一发（连发上限内）重新挂到服务端
         const refreshed = loadIdleReconnectRules().find(item => item.id === rule.id);
-        if (refreshed) void armIdleReconnectBailout(refreshed);
+        const maxLimit = refreshed?.maxConsecutive ?? IDLE_RECONNECT_MAX_CONSECUTIVE;
+        if (refreshed && refreshed.consecutiveCount < maxLimit) void armIdleReconnectBailout(refreshed);
     } catch (error: unknown) {
         if (isAbortLikeError(error) || isBackgroundGenerationCancelled(rule.sessionId)) {
             window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: rule.sessionId } }));

@@ -20,6 +20,8 @@ export type IdleReconnectRule = {
     intent: string;
     /** 自上次用户消息以来已连发次数 */
     consecutiveCount: number;
+    /** 最多连发次数限制（默认 3） */
+    maxConsecutive?: number;
     /** 上次触发时刻（毫秒） */
     lastFiredAt?: number;
     /** 当前这次主动生成被用户停止后，短时间内不再重试 */
@@ -72,7 +74,8 @@ export function markIdleReconnectFired(id: string, firedAtMs: number): void {
     if (!rule) return;
     if (!rule.lastFiredAt || firedAtMs > rule.lastFiredAt) {
         rule.lastFiredAt = firedAtMs;
-        rule.consecutiveCount = Math.min(IDLE_RECONNECT_MAX_CONSECUTIVE, rule.consecutiveCount + 1);
+        const maxLimit = rule.maxConsecutive ?? IDLE_RECONNECT_MAX_CONSECUTIVE;
+        rule.consecutiveCount = Math.min(maxLimit, rule.consecutiveCount + 1);
         saveRules(rules);
     }
 }

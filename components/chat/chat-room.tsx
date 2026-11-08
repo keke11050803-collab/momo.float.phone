@@ -2963,6 +2963,31 @@ export function ChatRoom({ session, onBack, onDeleted, onUserMessageSent, contac
             ? extractForcedStoryTrigger(aiResponseText)
             : { text: aiResponseText, description: undefined };
         aiResponseText = forcedStory.text;
+
+        // 识别 AI 自主决定下次联系的标签，如 [下次联系: 120m] / [下次联系: 2h] / [下次联系: 60分钟]
+        if (!session.isGroup) {
+            const nextContactMatch = aiResponseText.match(/\[(?:下次联系|稍后联系|主动联系|next_contact)[：:]\s*(\d+)\s*(m|min|h|hour|小时|分钟)?\]/i);
+            if (nextContactMatch) {
+                const amount = parseInt(nextContactMatch[1], 10);
+                const unit = (nextContactMatch[2] || "").toLowerCase();
+                if (amount > 0) {
+                    const delayMinutes = (unit.startsWith("h") || unit === "小时") ? amount * 60 : amount;
+                    const fireAt = Date.now() + delayMinutes * 60_000;
+                    saveTimedWakeSchedule({
+                        id: makeTimedWakeId(session.id),
+                        sessionId: session.id,
+                        characterId: session.contactId,
+                        createdAt: Date.now(),
+                        fireAt,
+                        delayMinutes,
+                        intent: "AI主动联系",
+                        source: "tool",
+                    });
+                }
+                aiResponseText = aiResponseText.replace(nextContactMatch[0], "").trim();
+            }
+        }
+
         const rawResponseText = options?.rawResponseText
             ? extractForcedStoryTrigger(options.rawResponseText).text
             : aiResponseText;

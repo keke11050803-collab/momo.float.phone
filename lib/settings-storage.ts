@@ -1181,6 +1181,7 @@ export type FollowUpConfig = {
     anxietyFieldName: string;    // 状态值字段名（默认 "焦虑值"）
     anxietyMinDelay: number;     // 最短延迟 秒（焦虑=100 时，默认 15）
     anxietyMaxDelay: number;     // 最长延迟 秒（焦虑=阈值时，默认 180）
+    maxFollowUps?: number;       // 最多追发次数（默认 3）
 };
 
 export type ChatSendConfig = {
@@ -1201,6 +1202,7 @@ export function getDefaultFollowUpConfig(): FollowUpConfig {
         anxietyFieldName: "焦虑值",
         anxietyMinDelay: 15,
         anxietyMaxDelay: 180,
+        maxFollowUps: 3,
     };
 }
 
@@ -1227,6 +1229,7 @@ export function loadFollowUpConfig(): FollowUpConfig {
             anxietyFieldName: typeof parsed.anxietyFieldName === "string" && parsed.anxietyFieldName.trim() ? parsed.anxietyFieldName : defaults.anxietyFieldName,
             anxietyMinDelay: typeof parsed.anxietyMinDelay === "number" ? Math.max(5, Math.min(300, parsed.anxietyMinDelay)) : defaults.anxietyMinDelay,
             anxietyMaxDelay: typeof parsed.anxietyMaxDelay === "number" ? Math.max(15, Math.min(600, parsed.anxietyMaxDelay)) : defaults.anxietyMaxDelay,
+            maxFollowUps: typeof parsed.maxFollowUps === "number" ? Math.max(1, Math.min(20, parsed.maxFollowUps)) : (defaults.maxFollowUps ?? 3),
         };
     } catch {
         return getDefaultFollowUpConfig();

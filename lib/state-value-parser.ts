@@ -15,6 +15,7 @@ const RICH_MEDIA_NAMES = new Set([
 /**
  * Extract [名称:数值] tags from text.
  * Supports full-width colon (：) and half-width colon (:).
+ * Also supports loose key-value pairs (e.g. 焦虑值 95) commonly used in status cards.
  * Values are clamped to 0-100. Duplicate names keep the last occurrence.
  */
 export function parseStateValues(text: string): ParseStateResult {
@@ -31,6 +32,19 @@ export function parseStateValues(text: string): ParseStateResult {
         // Skip known rich media tag names (e.g. [表情包:11])
         if (name && !isNaN(value) && !/^\d+$/.test(name) && !RICH_MEDIA_NAMES.has(name)) {
             map.set(name, Math.max(0, Math.min(100, value)));
+        }
+    }
+
+    // 兼容自然排版/自定义状态栏卡片中的状态值输出：如「焦虑值 95」或「焦虑值: 95」
+    const plainRegex = /(?:^|[\r\n\s])([^\r\n\[\]:：\d]{2,6})\s*[:：\s]\s*(\d{1,3})(?=$|[\r\n\s%])/g;
+    let plainMatch: RegExpExecArray | null;
+    while ((plainMatch = plainRegex.exec(text)) !== null) {
+        const name = plainMatch[1].trim();
+        const value = parseFloat(plainMatch[2]);
+        if (name && !isNaN(value) && !RICH_MEDIA_NAMES.has(name) && !map.has(name)) {
+            if (value >= 0 && value <= 100) {
+                map.set(name, value);
+            }
         }
     }
 

@@ -735,6 +735,18 @@ function FollowUpSettingsEditor({ onBack }: { onBack: () => void }) {
                         step={15}
                         onChange={v => updateConfig({ anxietyMaxDelay: v })}
                     />
+                    <ProfileSettingsSliderItem
+                        icon={SlidersHorizontal}
+                        color={BINDING_ACCENTS.preset}
+                        label="连发上限"
+                        desc="未收到回复时最多连续追发轮数"
+                        value={config.maxFollowUps ?? 3}
+                        valueLabel={`${config.maxFollowUps ?? 3}次`}
+                        min={1}
+                        max={10}
+                        step={1}
+                        onChange={v => updateConfig({ maxFollowUps: v })}
+                    />
                 </div>
 
                 {/* Reset button */}
@@ -1335,6 +1347,7 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
     const [tmUnit, setTmUnit] = useState<"minute" | "hour" | "day">("minute");
     const [tmIdleValue, setTmIdleValue] = useState("5");
     const [tmIdleUnit, setTmIdleUnit] = useState<"minute" | "hour" | "day">("minute");
+    const [tmMaxConsecutive, setTmMaxConsecutive] = useState("3");
     const [tmHint, setTmHint] = useState<string | null>(null);
     const [tmBusy, setTmBusy] = useState(false);
 
@@ -1403,6 +1416,10 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
         if (totalMinutes > 72 * 60) { setTmHint("最长 72 小时。"); return; }
         addChatContact(tmCharId);
         const session = createOrGetSession(tmCharId);
+        const parsedMaxConsecutive = parseInt(tmMaxConsecutive, 10);
+        const maxConsecutive = Number.isFinite(parsedMaxConsecutive) && parsedMaxConsecutive > 0
+            ? Math.max(1, Math.min(20, parsedMaxConsecutive))
+            : 3;
         const rule: IdleReconnectRule = {
             id: `idle_${tmCharId}_${Date.now().toString(36)}`,
             characterId: tmCharId,
@@ -1410,6 +1427,7 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
             intervalMinutes: totalMinutes,
             intent: "",
             consecutiveCount: 0,
+            maxConsecutive,
             createdAt: Date.now(),
         };
         upsertIdleReconnectRule(rule);
@@ -1676,6 +1694,26 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                             </div>
                         </div>
                     )}
+                    {tmMode === "idle" && (
+                        <div className="menu-item">
+                            <ProfileSettingsIcon icon={SlidersHorizontal} color={BINDING_ACCENTS.preset} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">最多连发</span>
+                                <span className="menu-desc">不回复时最多主动追发次数</span>
+                            </div>
+                            <div className="menu-right flex items-center gap-1 ts-13">
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={20}
+                                    className="w-[64px] text-right border-none outline-none ts-13 text-[var(--c-text)] bg-transparent"
+                                    value={tmMaxConsecutive}
+                                    onChange={e => setTmMaxConsecutive(e.target.value)}
+                                />
+                                <span className="ts-13 opacity-70">次</span>
+                            </div>
+                        </div>
+                    )}
                     <div className="menu-item" style={{ alignItems: "stretch", flexDirection: "column", gap: 8 }}>
                         <button className="ui-btn ui-btn-soft-action w-full" onClick={tmMode === "idle" ? handleCreateIdleRule : handleCreateTimedMsg} disabled={tmBusy}>
                             {tmBusy ? "创建中..." : "创建"}
@@ -1697,10 +1735,11 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                                 const hours = Math.floor(rule.intervalMinutes / 60);
                                 const minutes = rule.intervalMinutes % 60;
                                 const intervalLabel = `${hours ? `${hours}小时` : ""}${minutes ? `${minutes}分钟` : hours ? "" : "0分钟"}`;
+                                const maxLimit = rule.maxConsecutive ?? IDLE_RECONNECT_MAX_CONSECUTIVE;
                                 return (
                                     <div key={rule.id} className="menu-item">
                                         <div className="menu-label-group" style={{ minWidth: 0, flex: 1 }}>
-                                            <span className="menu-label">{charName} · 沉默超过 {intervalLabel}（连发 {rule.consecutiveCount}/{IDLE_RECONNECT_MAX_CONSECUTIVE}）</span>
+                                            <span className="menu-label">{charName} · 沉默超过 {intervalLabel}（连发 {rule.consecutiveCount}/{maxLimit}）</span>
                                             <span className="menu-desc" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>长时间没消息时主动来找你</span>
                                         </div>
                                         <button className="ui-btn ui-btn-outline py-1 px-3 ts-12" style={{ whiteSpace: "nowrap", color: "var(--c-danger)" }} onClick={() => handleDeleteIdleRule(rule)}>删除</button>
