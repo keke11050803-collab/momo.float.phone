@@ -2973,7 +2973,7 @@ export function ChatRoom({ session, onBack, onDeleted, onUserMessageSent, contac
                 if (amount > 0) {
                     const delayMinutes = (unit.startsWith("h") || unit === "小时") ? amount * 60 : amount;
                     const fireAt = Date.now() + delayMinutes * 60_000;
-                    saveTimedWakeSchedule({
+                    const schedule: TimedWakeSchedule = {
                         id: makeTimedWakeId(session.id),
                         sessionId: session.id,
                         characterId: session.contactId,
@@ -2982,7 +2982,9 @@ export function ChatRoom({ session, onBack, onDeleted, onUserMessageSent, contac
                         delayMinutes,
                         intent: "AI主动联系",
                         source: "tool",
-                    });
+                    };
+                    saveTimedWakeSchedule(schedule);
+                    void armTimedWakeBailout(schedule);
                 }
                 aiResponseText = aiResponseText.replace(nextContactMatch[0], "").trim();
             }

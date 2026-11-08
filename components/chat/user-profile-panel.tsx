@@ -1341,7 +1341,7 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
     const [quietEnd, setQuietEnd] = useState(storedQuiet ? `${storedQuiet[3].padStart(2, "0")}:${storedQuiet[4]}` : "08:00");
     const [timedSchedules, setTimedSchedules] = useState<TimedWakeSchedule[]>([]);
     const [idleRules, setIdleRules] = useState<IdleReconnectRule[]>([]);
-    const [tmMode, setTmMode] = useState<"idle" | "once">("idle");
+    const [tmMode, setTmMode] = useState<"ai" | "idle" | "once">("ai");
     const [tmCharId, setTmCharId] = useState("");
     const [tmValue, setTmValue] = useState("60");
     const [tmUnit, setTmUnit] = useState<"minute" | "hour" | "day">("minute");
@@ -1409,11 +1409,14 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
     const handleCreateIdleRule = async () => {
         if (tmBusy) return;
         if (!tmCharId) { setTmHint("请选择角色。"); return; }
-        const amount = Number(tmIdleValue);
-        if (!Number.isFinite(amount) || amount <= 0) { setTmHint("请填写有效的沉默时长。"); return; }
-        const totalMinutes = Math.max(1, Math.round(amount * UNIT_MS[tmIdleUnit] / 60000));
-        if (totalMinutes < 1) { setTmHint("沉默阈值至少 1 分钟。"); return; }
-        if (totalMinutes > 72 * 60) { setTmHint("最长 72 小时。"); return; }
+        let totalMinutes = 30;
+        if (tmMode === "idle") {
+            const amount = Number(tmIdleValue);
+            if (!Number.isFinite(amount) || amount <= 0) { setTmHint("请填写有效的沉默时长。"); return; }
+            totalMinutes = Math.max(1, Math.round(amount * UNIT_MS[tmIdleUnit] / 60000));
+            if (totalMinutes < 1) { setTmHint("沉默阈值至少 1 分钟。"); return; }
+            if (totalMinutes > 72 * 60) { setTmHint("最长 72 小时。"); return; }
+        }
         addChatContact(tmCharId);
         const session = createOrGetSession(tmCharId);
         const parsedMaxConsecutive = parseInt(tmMaxConsecutive, 10);
@@ -1436,7 +1439,9 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
         const armResult = await armIdleReconnectBailout(rule);
         setTmBusy(false);
         setTmHint(armResult.ok
-            ? `已创建：超过 ${amount}${UNIT_LABEL[tmIdleUnit]}没消息时，TA 会主动来找你；服务端离线推送已预约。`
+            ? (tmMode === "ai"
+                ? `已为该角色开启自主主动联系：最多连续追发 ${maxConsecutive} 次，离线推送已预约。`
+                : `已创建：超过 ${tmIdleValue}${UNIT_LABEL[tmIdleUnit]}没消息时，TA 会主动来找你；服务端离线推送已预约。`)
             : `已创建本地规则，但离线推送未预约成功：${armResult.reason}`);
         refreshTimedSchedules();
     };
@@ -1618,11 +1623,11 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                             <select
                                 className="text-right border-none outline-none ts-13 text-[var(--c-text)] bg-transparent"
                                 value={tmMode}
-                                onChange={e => setTmMode(e.target.value as "idle" | "once" | "ai")}
+                                onChange={e => setTmMode(e.target.value as "ai" | "idle" | "once")}
                             >
+                                <option value="ai">AI 自主找我（只限制连发上限）</option>
                                 <option value="idle">长时间没消息时（可重复）</option>
                                 <option value="once">固定时间后（一次）</option>
-                                <option value="ai">由 AI 自主决定（剧情驱动）</option>
                             </select>
                         </div>
                     </div>
@@ -1696,7 +1701,7 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                             </div>
                         </div>
                     )}
-                    {tmMode === "idle" && (
+                    {(tmMode === "idle" || tmMode === "ai") && (
                         <div className="menu-item">
                             <ProfileSettingsIcon icon={SlidersHorizontal} color={BINDING_ACCENTS.preset} />
                             <div className="menu-label-group">
@@ -1717,15 +1722,17 @@ function OfflinePushSettingsPage({ onBack }: { onBack: () => void }) {
                         </div>
                     )}
                     <div className="menu-item" style={{ alignItems: "stretch", flexDirection: "column", gap: 8 }}>
-                        <button className="ui-btn ui-btn-soft-action w-full" onClick={tmMode === "idle" ? handleCreateIdleRule : handleCreateTimedMsg} disabled={tmBusy}>
+                        <button className="ui-btn ui-btn-soft-action w-full" onClick={tmMode === "once" ? handleCreateTimedMsg : handleCreateIdleRule} disabled={tmBusy}>
                             {tmBusy ? "创建中..." : "创建"}
                         </button>
                     </div>
                 </div>
                 <p className="menu-group-desc mx-2">
-                    {tmHint || (tmMode === "idle"
-                        ? `你长时间不发消息时 TA 会主动来找你；不回复最多连发 ${IDLE_RECONNECT_MAX_CONSECUTIVE} 次，回复后重新开始计。每个角色一条规则。`
-                        : "每个角色同时仅保留一条，新建会替换旧的。关掉后台由服务端接管生成并推送（需开启离线推送）。")}
+                    {tmHint || (tmMode === "ai"
+                        ? "你不用猜 TA 什么时候找你，TA 聊完后会自行安排联系时间；当你一直不回复时，TA 会持续联系你直到达到设定的最多连发次数。"
+                        : tmMode === "idle"
+                            ? `你长时间不发消息时 TA 会主动来找你；不回复最多连发 ${IDLE_RECONNECT_MAX_CONSECUTIVE} 次，回复后重新开始计。`
+                            : "每个角色同时仅保留一条，新建会替换旧的。关掉后台由服务端接管生成并推送（需开启离线推送）。")}
                 </p>
 
                 {(timedSchedules.length > 0 || idleRules.length > 0) && (
