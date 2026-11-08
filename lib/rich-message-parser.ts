@@ -710,8 +710,8 @@ export function parseAIResponse(rawText: string, previousState: StateValue[]): P
         return r;
     };
 
-    // 1. Parse state values
-    const parsedSV = parseStateValues(protected_);
+    // 1. Parse state values (先拿原始文本提取，防止 HTML 保护块把状态栏卡片里的属性吃掉)
+    const parsedSV = parseStateValues(rawText);
     const stateValues = mergeStateValues(previousState, parsedSV.stateValues);
 
     const meetingInvite = extractMeetingInvite(parsedSV.cleanText);

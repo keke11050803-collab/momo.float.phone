@@ -35,11 +35,11 @@ export function parseStateValues(text: string): ParseStateResult {
         }
     }
 
-    // 兼容自然排版/自定义状态栏卡片中的状态值输出：如「焦虑值 95」或「焦虑值: 95」
-    const plainRegex = /(?:^|[\r\n\s])([^\r\n\[\]:：\d]{2,6})\s*[:：\s]\s*(\d{1,3})(?=$|[\r\n\s%])/g;
+    // 兼容自然排版/自定义状态栏卡片/HTML表格中的状态值输出：如「焦虑值 95」、「焦虑值: 95」或等号「焦虑值=95」
+    const plainRegex = /(?:^|[\r\n\s>|])([^\r\n\[\]:：=\d<>]{2,8})\s*[:：=\s]\s*(\d{1,3})(?=$|[\r\n\s%<|])/g;
     let plainMatch: RegExpExecArray | null;
     while ((plainMatch = plainRegex.exec(text)) !== null) {
-        const name = plainMatch[1].trim();
+        const name = plainMatch[1].replace(/^[#\-*\s]+/, "").trim();
         const value = parseFloat(plainMatch[2]);
         if (name && !isNaN(value) && !RICH_MEDIA_NAMES.has(name) && !map.has(name)) {
             if (value >= 0 && value <= 100) {
