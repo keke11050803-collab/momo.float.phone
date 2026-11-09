@@ -16,6 +16,7 @@ import {
     updateMessageMediaData,
     createResponseBatchId,
     getLatestCharacterStateValues,
+    loadChatAppSettings,
 } from "./chat-storage";
 import type { ChatMessage, StateValue } from "./chat-storage";
 import { generateChatCompletion, flattenCompletionResult } from "./chat-engine";
