@@ -1084,7 +1084,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 28px;
+  padding: 0 clamp(14px, 5vw, 28px);
 }
 
 .cp-page-dots {
@@ -1108,10 +1108,10 @@
 
 .cp-app-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: min-content;
-  row-gap: 25px;
-  column-gap: 16px;
+  row-gap: clamp(16px, 4vw, 25px);
+  column-gap: clamp(8px, 3vw, 16px);
   justify-items: center;
 }
 
@@ -1271,7 +1271,8 @@
 }
 
 .cp-w-music-info {
-  margin-right: 150px;
+  margin-right: clamp(95px, 30vw, 150px);
+  min-width: 0;
   z-index: 5;
   flex: 1;
   display: flex;
@@ -1561,7 +1562,7 @@
 .cp-w-calendar {
   height: 168px;
   background: #ffffff;
-  padding: 24px 28px;
+  padding: clamp(16px, 4vw, 24px) clamp(14px, 4vw, 28px);
   display: flex;
   flex-direction: row;
   align-items: stretch;
@@ -1573,10 +1574,11 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  width: 40%;
+  width: 38%;
+  min-width: 0;
   border-right: 1.5px solid #f0f0f0;
-  padding-right: 16px;
-  margin-right: 16px;
+  padding-right: clamp(8px, 3vw, 16px);
+  margin-right: clamp(8px, 3vw, 16px);
 }
 
 .cp-cal-month-vert {
@@ -1591,7 +1593,7 @@
 }
 
 .cp-cal-today-num {
-  font-size: calc(68px*var(--app-text-scale,1));
+  font-size: clamp(46px, 14vw, calc(68px*var(--app-text-scale,1)));
   font-weight: 800;
   color: #111111;
   line-height: 1;

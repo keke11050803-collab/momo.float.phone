@@ -17,6 +17,7 @@ import {
     createResponseBatchId,
     getLatestCharacterStateValues,
     loadChatAppSettings,
+    reindexSessionMessageOrdersByTime,
 } from "./chat-storage";
 import type { ChatMessage, StateValue } from "./chat-storage";
 import { generateChatCompletion, flattenCompletionResult } from "./chat-engine";
@@ -418,12 +419,28 @@ function pollSchedules() {
 
 function pollTimedWakeSchedules(now: number) {
     const schedules = loadTimedWakeSchedules();
+    let triggerIndex = 0;
     for (const sched of schedules) {
         if (sched.fireAt > now) continue;
         if (timedWakeFiringSet.has(sched.id)) continue;
         if (now < scheduledOutboxGraceUntil) continue;
-        console.log(`[TimedWake] Firing now for session=${sched.sessionId}`);
-        fireTimedWake(sched);
+
+        // 定时主动消息若过期（用户离线期间到期），沿用原本到期的 fireAt 加上合理抖动
+        const maxJitterMs = Math.min(300_000, Math.max(0, now - sched.fireAt));
+        const jitterMs = Math.floor(Math.random() * maxJitterMs);
+        const simulatedCreatedAtMs = Math.min(now - 1000, sched.fireAt + jitterMs);
+        const simulatedCreatedAt = simulatedCreatedAtMs > sched.createdAt ? new Date(simulatedCreatedAtMs).toISOString() : undefined;
+
+        console.log(`[TimedWake] Firing now for session=${sched.sessionId}, simulatedAt=${simulatedCreatedAt || "now"}`);
+        const delayMs = triggerIndex * 2500;
+        triggerIndex += 1;
+        if (delayMs > 0) {
+            bgSetTimeout(() => {
+                void fireTimedWake(sched, simulatedCreatedAt);
+            }, delayMs);
+        } else {
+            void fireTimedWake(sched, simulatedCreatedAt);
+        }
     }
 }
 
@@ -599,6 +616,7 @@ function pollIdleReconnect(now: number) {
     if (now - lastIdleReconnectPollAt < IDLE_RECONNECT_POLL_INTERVAL_MS) return;
     lastIdleReconnectPollAt = now;
 
+    let triggerIndex = 0;
     for (const rule of loadIdleReconnectRules()) {
         if (idleReconnectFiringSet.has(rule.id)) continue;
         if (firingSet.has(rule.sessionId)) continue;
@@ -624,12 +642,27 @@ function pollIdleReconnect(now: number) {
         if (now < scheduledOutboxGraceUntil) continue;
         if (isWithinPushQuietHours(now)) continue; // 安静时段本地也不打扰，出时段后自然触发
 
-        console.log(`[IdleReconnect] Firing for session=${rule.sessionId}, idle=${Math.round((now - lastUserAt) / 60000)}min`);
-        void fireIdleReconnect(rule, lastUserAt);
+        // 离线时间戳回溯：按原本到期时刻 nextDueAt 加上随机抖动，避免扎堆打上当前打开时间戳
+        const maxJitterMs = Math.min(intervalMs * 0.3, Math.max(0, now - nextDueAt));
+        const jitterMs = Math.floor(Math.random() * maxJitterMs);
+        const simulatedCreatedAtMs = Math.min(now - 1000, nextDueAt + jitterMs);
+        const simulatedCreatedAt = simulatedCreatedAtMs > lastUserAt ? new Date(simulatedCreatedAtMs).toISOString() : undefined;
+
+        console.log(`[IdleReconnect] Firing for session=${rule.sessionId}, idle=${Math.round((now - lastUserAt) / 60000)}min, simulatedAt=${simulatedCreatedAt || "now"}`);
+        // 多角色排队错峰生成，避免同时并发冲击 API
+        const delayMs = triggerIndex * 2500;
+        triggerIndex += 1;
+        if (delayMs > 0) {
+            bgSetTimeout(() => {
+                void fireIdleReconnect(rule, lastUserAt, simulatedCreatedAt);
+            }, delayMs);
+        } else {
+            void fireIdleReconnect(rule, lastUserAt, simulatedCreatedAt);
+        }
     }
 }
 
-async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number) {
+async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number, simulatedCreatedAt?: string) {
     idleReconnectFiringSet.add(rule.id);
     let backgroundController: AbortController | null = null;
     try {
@@ -683,8 +716,12 @@ async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number) {
             0,
             undefined,
             latestMessages,
+            simulatedCreatedAt ? { createdAt: simulatedCreatedAt } : undefined,
         );
-        markIdleReconnectFired(rule.id, Date.now());
+        if (simulatedCreatedAt) {
+            reindexSessionMessageOrdersByTime(session.id);
+        }
+        markIdleReconnectFired(rule.id, simulatedCreatedAt ? Date.parse(simulatedCreatedAt) : Date.now());
         if (hasVisible) scheduleFollowUp(session.id, 0, stateValues);
         window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: session.id } }));
 
@@ -707,7 +744,7 @@ async function fireIdleReconnect(rule: IdleReconnectRule, lastUserAt: number) {
     }
 }
 
-async function fireTimedWake(sched: TimedWakeSchedule) {
+async function fireTimedWake(sched: TimedWakeSchedule, simulatedCreatedAt?: string) {
     timedWakeFiringSet.add(sched.id);
     let backgroundController: AbortController | null = null;
     removeTimedWakeSchedule(sched.id);
@@ -720,7 +757,7 @@ async function fireTimedWake(sched: TimedWakeSchedule) {
         if (!session || session.contactId !== sched.characterId) return;
 
         const latestMessages = loadChatMessages(session.id);
-        const elapsedMinutes = resolveTimedWakeElapsedMinutes(sched, latestMessages, Date.now());
+        const elapsedMinutes = resolveTimedWakeElapsedMinutes(sched, latestMessages, simulatedCreatedAt ? Date.parse(simulatedCreatedAt) : Date.now());
 
         console.log("[TimedWake] Dispatching followup-started for session:", session.id);
         backgroundController = beginBackgroundApiRun(session.id);
@@ -751,7 +788,11 @@ async function fireTimedWake(sched: TimedWakeSchedule) {
             0,
             undefined,
             latestMessages,
+            simulatedCreatedAt ? { createdAt: simulatedCreatedAt } : undefined,
         );
+        if (simulatedCreatedAt) {
+            reindexSessionMessageOrdersByTime(session.id);
+        }
         console.log(`[TimedWake] Result: hasVisible=${hasVisible}`);
 
         if (hasVisible) {
