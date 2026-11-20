@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Trash2, Plus, Smile, ImagePlus, Check, ChevronDown, ChevronRight, Info, Pencil, Sticker, Layers } from "lucide-react";
+import { Trash2, Plus, Smile, ImagePlus, Check, ChevronDown, ChevronRight, Info, Pencil, Sticker, Layers, ArrowUpDown, ArrowLeft, ArrowRight } from "lucide-react";
 import { loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
 import {
@@ -18,6 +18,8 @@ import {
     STICKER_PACK_NOTE_MAX,
     renameStickerInPack,
     removeStickerFromPack,
+    moveStickerInPack,
+    sortStickersInPack,
     getPackAssignments,
     togglePackAssignment,
     resolvePackStickerMap,
@@ -258,9 +260,13 @@ type StickerCardProps = {
     imageUrl?: string;
     isEditing: boolean;
     editingValue: string;
+    canMovePrev?: boolean;
+    canMoveNext?: boolean;
+    showReorderControls?: boolean;
     onStartEdit: (sticker: StickerItem) => void;
     onEditingValueChange: (value: string) => void;
     onCommitName: (stickerId: string) => void;
+    onMove?: (direction: "prev" | "next" | "top") => void;
     onRemove: (sticker: StickerItem) => Promise<void>;
 };
 
@@ -269,9 +275,13 @@ const StickerCard = memo(function StickerCard({
     imageUrl,
     isEditing,
     editingValue,
+    canMovePrev,
+    canMoveNext,
+    showReorderControls,
     onStartEdit,
     onEditingValueChange,
     onCommitName,
+    onMove,
     onRemove,
 }: StickerCardProps) {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -295,6 +305,31 @@ const StickerCard = memo(function StickerCard({
                     <img src={imageUrl} alt={sticker.name} className="w-full h-full object-contain drop-shadow-sm" />
                 ) : (
                     <span className="ts-12 font-medium text-[var(--c-text)] opacity-40">...</span>
+                )}
+                {/* 排序微调按钮：微调模式下直接可见 */}
+                {showReorderControls && onMove && (
+                    <div className="absolute top-1.5 left-1.5 flex items-center gap-1 z-10">
+                        {canMovePrev && (
+                            <button
+                                type="button"
+                                aria-label="向前移动"
+                                onClick={(e) => { e.stopPropagation(); onMove("prev"); }}
+                                className="w-5 h-5 bg-white/70 dark:bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center text-[var(--c-icon)] shadow-sm active:scale-90"
+                            >
+                                <ArrowLeft size={10} />
+                            </button>
+                        )}
+                        {canMoveNext && (
+                            <button
+                                type="button"
+                                aria-label="向后移动"
+                                onClick={(e) => { e.stopPropagation(); onMove("next"); }}
+                                className="w-5 h-5 bg-white/70 dark:bg-black/60 backdrop-blur-md rounded-full flex items-center justify-center text-[var(--c-icon)] shadow-sm active:scale-90"
+                            >
+                                <ArrowRight size={10} />
+                            </button>
+                        )}
+                    </div>
                 )}
                 <button
                     type="button"
@@ -356,6 +391,9 @@ function PackEditor({ pack, onBack }: { pack: StickerPack; onBack: () => void })
     const [isNoteExpanded, setIsNoteExpanded] = useState(false);
     const [showNoteInfo, setShowNoteInfo] = useState(false);
 
+    const [showSortMenu, setShowSortMenu] = useState(false);
+    const [isReordering, setIsReordering] = useState(false);
+
     const refreshPack = useCallback(() => {
         const fresh = loadStickerPacks().find(p => p.id === pack.id);
         if (fresh) {
@@ -363,13 +401,25 @@ function PackEditor({ pack, onBack }: { pack: StickerPack; onBack: () => void })
             resolvePackStickerMap(fresh).then((nameMap) => {
                 const next: Record<string, string> = {};
                 fresh.stickers.forEach(sticker => {
-                    const url = nameMap[sticker.name];
+                    // 支持重名表情包：优先按 sticker.id 精确读取图片 URL，避免同名表情串图
+                    const url = nameMap[sticker.id] || nameMap[sticker.name];
                     if (url) next[sticker.id] = url;
                 });
                 setUrlMap(next);
             });
         }
     }, [pack.id]);
+
+    const handleSort = useCallback((mode: "name_asc" | "name_desc" | "newest" | "oldest") => {
+        sortStickersInPack(pack.id, mode);
+        setShowSortMenu(false);
+        refreshPack();
+    }, [pack.id, refreshPack]);
+
+    const handleMoveSticker = useCallback((stickerId: string, direction: "prev" | "next" | "top") => {
+        moveStickerInPack(pack.id, stickerId, direction);
+        refreshPack();
+    }, [pack.id, refreshPack]);
 
     const refreshAssignments = () => {
         setAssignedCharIds(getPackAssignments(pack.id));
@@ -545,24 +595,84 @@ function PackEditor({ pack, onBack }: { pack: StickerPack; onBack: () => void })
                 <div className="flex-1 mt-4 bg-[var(--c-card)] rounded-t-[32px] p-6 shadow-[0_-8px_32px_rgba(0,0,0,0.02)] border-t border-[var(--c-card-border)]/30 min-h-0 overflow-y-auto">
                     <div className="flex items-center justify-between mb-5 px-1">
                         <div className="text-[calc(18px*var(--app-text-scale,1))] font-bold text-[var(--c-text-title)]">表情库 <span className="text-[var(--c-text)] opacity-50 font-medium ml-1 text-base">{currentPack.stickers.length}</span></div>
-                        <button
-                            type="button"
-                            onClick={() => setShowBatchDialog(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full ts-12 font-semibold active:scale-95 transition-transform"
-                            style={{ background: "color-mix(in srgb, var(--c-icon-active) 12%, transparent)", color: "var(--c-icon-active)" }}
-                        >
-                            <Layers size={14} /> 批量导入
-                        </button>
+                        <div className="flex items-center gap-2 relative">
+                            <button
+                                type="button"
+                                onClick={() => setShowSortMenu(v => !v)}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-full ts-12 font-semibold active:scale-95 transition-transform border-none cursor-pointer"
+                                style={{
+                                    background: isReordering || showSortMenu ? "var(--c-icon-active)" : "color-mix(in srgb, var(--c-icon) 10%, transparent)",
+                                    color: isReordering || showSortMenu ? "#fff" : "var(--c-text)",
+                                }}
+                            >
+                                <ArrowUpDown size={14} /> {isReordering ? "调整中" : "排序"}
+                            </button>
+                            {showSortMenu && (
+                                <div
+                                    className="absolute top-9 right-0 z-50 py-1.5 w-36 bg-[var(--c-card)] border border-[var(--c-card-border)] rounded-2xl shadow-xl flex flex-col text-left"
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => { setIsReordering(prev => !prev); setShowSortMenu(false); }}
+                                        className="px-3 py-2 ts-12 text-[var(--c-text)] hover:bg-black/5 dark:hover:bg-white/5 text-left border-none bg-transparent cursor-pointer font-medium"
+                                    >
+                                        {isReordering ? "✓ 完成微调" : "⇄ 手动微调位置"}
+                                    </button>
+                                    <div className="h-[1px] bg-[var(--c-card-border)] my-1 opacity-50" />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSort("name_asc")}
+                                        className="px-3 py-2 ts-12 text-[var(--c-text)] hover:bg-black/5 dark:hover:bg-white/5 text-left border-none bg-transparent cursor-pointer"
+                                    >
+                                        按名称升序 (A-Z)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSort("name_desc")}
+                                        className="px-3 py-2 ts-12 text-[var(--c-text)] hover:bg-black/5 dark:hover:bg-white/5 text-left border-none bg-transparent cursor-pointer"
+                                    >
+                                        按名称降序 (Z-A)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSort("newest")}
+                                        className="px-3 py-2 ts-12 text-[var(--c-text)] hover:bg-black/5 dark:hover:bg-white/5 text-left border-none bg-transparent cursor-pointer"
+                                    >
+                                        倒序翻转
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSort("oldest")}
+                                        className="px-3 py-2 ts-12 text-[var(--c-text)] hover:bg-black/5 dark:hover:bg-white/5 text-left border-none bg-transparent cursor-pointer"
+                                    >
+                                        按添加时间正序
+                                    </button>
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setShowBatchDialog(true)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full ts-12 font-semibold active:scale-95 transition-transform border-none cursor-pointer"
+                                style={{ background: "color-mix(in srgb, var(--c-icon-active) 12%, transparent)", color: "var(--c-icon-active)" }}
+                            >
+                                <Layers size={14} /> 批量导入
+                            </button>
+                        </div>
                     </div>
                     
                     <div className="grid grid-cols-3 gap-x-4 gap-y-6 pb-20">
-                        {currentPack.stickers.map(s => (
+                        {currentPack.stickers.map((s, index) => (
                             <StickerCard
                                 key={s.id}
                                 sticker={s}
                                 imageUrl={urlMap[s.id]}
                                 isEditing={editingNameId === s.id}
                                 editingValue={editingNameValue}
+                                canMovePrev={index > 0}
+                                canMoveNext={index < currentPack.stickers.length - 1}
+                                showReorderControls={isReordering}
+                                onMove={(dir) => handleMoveSticker(s.id, dir)}
                                 onStartEdit={handleStartNameEdit}
                                 onEditingValueChange={setEditingNameValue}
                                 onCommitName={handleNameCommit}

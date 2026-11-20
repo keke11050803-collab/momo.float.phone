@@ -54,7 +54,7 @@ import { getSchemes, saveScheme, deleteScheme, type CSSScheme } from "@/lib/css-
 import { CustomStatusFrame } from "@/components/chat/custom-status-frame";
 import { KeyboardAutoSendDebounceItem } from "@/components/chat/keyboard-auto-send-debounce-item";
 import { SessionChatSoundsSection } from "@/components/chat/session-chat-sounds";
-import { ChevronRight, Image as ImageIcon, Video, Mic, UserMinus, UserPlus, Users, Pin, Ban, MessageSquare, Search, AlertCircle, Code, Laptop, Trash2, Smile, Sparkles, X, Play, Upload, Download, Save, FolderOpen, Camera, RefreshCw, type LucideIcon } from "lucide-react";
+import { ChevronRight, Image as ImageIcon, Video, Mic, UserMinus, UserPlus, Users, Pin, Ban, MessageSquare, Search, AlertCircle, Code, Laptop, Trash2, Smile, Sparkles, X, Play, Upload, Download, Save, FolderOpen, Camera, RefreshCw, Wrench, type LucideIcon } from "lucide-react";
 import { BINDING_ACCENTS, CONTENT_APP_ACCENTS } from "@/lib/ui-accent-colors";
 import CSSSchemeBar from "@/components/ui/css-scheme-picker";
 import { ConfirmDialog } from "@/components/ui/modal";
@@ -433,6 +433,7 @@ export function ChatSettingsPanel({
     };
     const [visionImagePromptLimit, setVisionImagePromptLimit] = useState(() => resolveVisionImagePromptLimit(session));
     const [visionLimitUsesGlobal, setVisionLimitUsesGlobal] = useState(session.visionImagePromptLimitUsesGlobal !== false);
+    const [mcpEnabled, setMcpEnabled] = useState(session.mcpEnabled !== false);
     const [bilingualTranslationEnabled, setBilingualTranslationEnabled] = useState(session.bilingualTranslationEnabled !== false);
     const [offlineSummaryRetry, setOfflineSummaryRetry] = useState(session.offlineSummaryRetry !== false);
     const [collapseBilingualTranslation, setCollapseBilingualTranslation] = useState(session.collapseBilingualTranslation !== false);
@@ -1458,6 +1459,22 @@ export function ChatSettingsPanel({
                                     onChange={c => {
                                         setDiscardInvalidStickers(c);
                                         updateSession({ discardInvalidStickers: c });
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div className="menu-item">
+                            <ChatInfoIcon icon={Wrench} color={BINDING_ACCENTS.api} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">允许使用 MCP 工具</span>
+                                <span className="menu-desc">开启后角色可调用已连接的 MCP 服务器工具；关闭后禁用当前角色的 MCP 权限</span>
+                            </div>
+                            <div className="menu-right">
+                                <Toggle
+                                    checked={mcpEnabled}
+                                    onChange={c => {
+                                        setMcpEnabled(c);
+                                        updateSession({ mcpEnabled: c });
                                     }}
                                 />
                             </div>

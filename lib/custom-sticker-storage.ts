@@ -235,6 +235,63 @@ export async function removeStickerFromPack(packId: string, stickerId: string): 
     if (removed.assetId) await deleteThemeAsset(removed.assetId);
 }
 
+/** 移动单个表情的位置（向左/向前、向右/向后、置顶） */
+export function moveStickerInPack(packId: string, stickerId: string, direction: "prev" | "next" | "top"): void {
+    const packs = readPacks();
+    const pack = packs.find(p => p.id === packId);
+    if (!pack) return;
+    const idx = pack.stickers.findIndex(s => s.id === stickerId);
+    if (idx === -1) return;
+    if (direction === "top" && idx > 0) {
+        const [item] = pack.stickers.splice(idx, 1);
+        pack.stickers.unshift(item);
+    } else if (direction === "prev" && idx > 0) {
+        const temp = pack.stickers[idx];
+        pack.stickers[idx] = pack.stickers[idx - 1];
+        pack.stickers[idx - 1] = temp;
+    } else if (direction === "next" && idx < pack.stickers.length - 1) {
+        const temp = pack.stickers[idx];
+        pack.stickers[idx] = pack.stickers[idx + 1];
+        pack.stickers[idx + 1] = temp;
+    }
+    writePacks(packs);
+}
+
+/** 一键对组内表情排序 */
+export function sortStickersInPack(packId: string, mode: "name_asc" | "name_desc" | "newest" | "oldest"): void {
+    const packs = readPacks();
+    const pack = packs.find(p => p.id === packId);
+    if (!pack || pack.stickers.length <= 1) return;
+    if (mode === "name_asc") {
+        pack.stickers.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+    } else if (mode === "name_desc") {
+        pack.stickers.sort((a, b) => b.name.localeCompare(a.name, "zh-CN"));
+    } else if (mode === "newest") {
+        pack.stickers.reverse();
+    } else if (mode === "oldest") {
+        pack.stickers.sort((a, b) => a.id.localeCompare(b.id));
+    }
+    writePacks(packs);
+}
+
+/** 调整表情包组在列表中的顺序 */
+export function reorderStickerPacks(orderedPackIds: string[]): void {
+    const packs = readPacks();
+    const map = new Map(packs.map(p => [p.id, p]));
+    const next: StickerPack[] = [];
+    for (const id of orderedPackIds) {
+        const p = map.get(id);
+        if (p) {
+            next.push(p);
+            map.delete(id);
+        }
+    }
+    for (const p of map.values()) {
+        next.push(p);
+    }
+    writePacks(next);
+}
+
 // ── Pack ↔ Character assignments ──
 
 export function getPackAssignments(packId: string): string[] {
@@ -310,9 +367,12 @@ export function getCustomStickerExample(characterId: string): string {
     return `[表情包:${stickers[0].name}]`;
 }
 
-/** Find a custom sticker by name for a given character. */
+/** Find a custom sticker by name for a given character. 支持同名表情包随机选取 */
 export function findCustomStickerByName(characterId: string, name: string): StickerItem | undefined {
-    return loadCustomStickers(characterId).find(s => s.name === name);
+    const matches = loadCustomStickers(characterId).filter(s => s.name === name);
+    if (matches.length === 0) return undefined;
+    if (matches.length === 1) return matches[0];
+    return matches[Math.floor(Math.random() * matches.length)];
 }
 
 /** Resolve a single sticker's image URL from IndexedDB. */
@@ -320,7 +380,7 @@ export async function resolveCustomStickerUrl(assetId: string): Promise<string |
     return getThemeAssetDataUrl(assetId);
 }
 
-/** Resolve all custom sticker URLs for a character → { name: dataUrl }. */
+/** Resolve all custom sticker URLs for a character → { name: dataUrl, [id]: dataUrl }. 支持重名 */
 export async function resolveCustomStickerMap(characterId: string): Promise<Record<string, string>> {
     const stickers = loadCustomStickers(characterId);
     if (stickers.length === 0) return {};
@@ -328,10 +388,12 @@ export async function resolveCustomStickerMap(characterId: string): Promise<Reco
     const assetMap = assetIds.length > 0 ? await getThemeAssetMap(assetIds) : {};
     const result: Record<string, string> = {};
     for (const s of stickers) {
-        if (s.externalUrl) {
-            result[s.name] = s.externalUrl;
-        } else if (assetMap[s.assetId]) {
-            result[s.name] = assetMap[s.assetId];
+        const url = s.externalUrl || assetMap[s.assetId] || "";
+        if (url) {
+            result[s.id] = url;
+            if (!result[s.name]) {
+                result[s.name] = url;
+            }
         }
     }
     return result;

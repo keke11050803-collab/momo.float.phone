@@ -366,6 +366,7 @@ type ChatPromptBuildOptions = {
     worldBookActivationContext?: string;
     activateAllWorldBooks?: boolean;
     toolsAllowed?: boolean;
+    skipTools?: boolean;
     forceEnableTools?: boolean;
 };
 
@@ -1915,8 +1916,11 @@ export async function buildChatPromptMessages(
     const memConfig = loadMemoryConfig();
     const isOfflineMode = options?.appTags?.includes("offline") === true;
     const effectiveAppTags = mergeAppTags(options?.appTags, promptProfile?.appTags, resolvedAppId);
-    const toolsAllowed = options?.toolsAllowed !== false && !isOfflineMode;
-    const enabledTools = toolsAllowed ? getEnabledTools(resolvedAppId) : [];
+    const toolsAllowed = options?.toolsAllowed !== false && options?.skipTools !== true && !isOfflineMode;
+    const rawEnabledTools = toolsAllowed ? getEnabledTools(resolvedAppId) : [];
+    const enabledTools = session.mcpEnabled === false
+        ? rawEnabledTools.filter(t => t.source !== "mcp" && t.source !== "mcp_server")
+        : rawEnabledTools;
     const toolsEnabled = enabledTools.length > 0
         && (options?.forceEnableTools === true || presetIncludesToolsMacro(preset, resolvedAppId, effectiveAppTags));
     const usesNativeActions = Boolean(toolsEnabled && nativeToolProtocolForConfig(config));

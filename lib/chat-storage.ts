@@ -80,6 +80,8 @@ export type ChatSession = {
     visionImagePromptLimit?: number;
     /** false 表示当前私聊明确覆盖全局最近图片数量；旧会话默认跟随已设置的全局值 */
     visionImagePromptLimitUsesGlobal?: boolean;
+    /** 是否允许该会话的角色调用 MCP 工具。默认开启（true）；关闭后过滤掉所有 MCP 工具。 */
+    mcpEnabled?: boolean;
     /** 流式生成（线上）：开启后该会话的线上 AI 回复边生成边显示（默认关，保持原整段请求行为） */
     streamOnline?: boolean;
     /** 线上聊天附加中文角色独白提示词，使用现有思考展示区；默认关闭。 */

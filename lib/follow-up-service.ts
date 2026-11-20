@@ -224,19 +224,21 @@ export function scheduleFollowUp(sessionId: string, count: number, stateValues?:
         return;
     }
 
-    if (anxietyEntry.value < config.anxietyThreshold) {
-        console.log(`[FollowUp] Anxiety ${anxietyEntry.value} < threshold ${config.anxietyThreshold}, not scheduling.`);
+    // 焦虑门槛向下浮动容差 15 点：即使没达到硬性阈值（如设 50，当前 35~49），也会因心情波动触发一次追发
+    const relaxedThreshold = Math.max(0, config.anxietyThreshold - 15);
+    if (anxietyEntry.value < relaxedThreshold) {
+        console.log(`[FollowUp] Anxiety ${anxietyEntry.value} < relaxed threshold ${relaxedThreshold} (base ${config.anxietyThreshold}), not scheduling.`);
         clearFollowUpSchedule(sessionId);
         cancelFollowUpBailout(sessionId);
         return;
     }
 
-    // Linear interpolation: threshold → maxDelay, 100 → minDelay
-    const range = 100 - config.anxietyThreshold;
-    const t = range > 0 ? (anxietyEntry.value - config.anxietyThreshold) / range : 1;
+    // Linear interpolation: relaxedThreshold → maxDelay, 100 → minDelay
+    const range = 100 - relaxedThreshold;
+    const t = range > 0 ? (anxietyEntry.value - relaxedThreshold) / range : 1;
     const delaySec = Math.round(config.anxietyMaxDelay + t * (config.anxietyMinDelay - config.anxietyMaxDelay));
     const fireAt = Date.now() + delaySec * 1000;
-    console.log(`[FollowUp] Anxiety-driven: value=${anxietyEntry.value}, delay=${delaySec}s, session=${sessionId}, count=${count}`);
+    console.log(`[FollowUp] Anxiety-driven (relaxed): value=${anxietyEntry.value}, delay=${delaySec}s, session=${sessionId}, count=${count}`);
     saveFollowUpSchedule({ sessionId, fireAt, count, delaySec });
     // 离线推送兜底：把本轮追问的完整请求快照预约到服务端，App 被杀时由服务端接管
     void armFollowUpBailout(sessionId, count, delaySec, fireAt);
@@ -363,7 +365,7 @@ async function saveBackgroundCompletionRounds(
     currentCount: number,
     followUpIndex: number | undefined,
     contextMessages: ChatMessage[],
-    options?: { senderCharacterId?: string; senderName?: string; silent?: boolean },
+    options?: { senderCharacterId?: string; senderName?: string; silent?: boolean; createdAt?: string },
 ): Promise<{ hasVisible: boolean; newCount: number; stateValues: StateValue[] }> {
     let hasVisible = false;
     let newCount = currentCount;
@@ -399,6 +401,7 @@ function pollSchedules() {
     try {
         const schedules = loadAllFollowUpSchedules();
         const now = Date.now();
+        let triggerIndex = 0;
         for (const sched of schedules) {
             if (sched.fireAt > now) {
                 const remainSec = Math.round((sched.fireAt - now) / 1000);
@@ -406,8 +409,27 @@ function pollSchedules() {
                 continue;
             }
             if (firingSet.has(sched.sessionId)) continue; // already in-flight
-            console.log(`[FollowUp] Firing now for session=${sched.sessionId}, count=${sched.count}`);
-            fireFollowUp(sched); // intentionally not awaited — fire & forget
+
+            // 离线时间戳回溯：当到期时间早于当前（离线期间积压），回溯到原本到期时刻加上随机抖动
+            const isOfflineBackdate = (now - sched.fireAt) > 5000;
+            let simulatedCreatedAt: string | undefined;
+            if (isOfflineBackdate) {
+                const maxJitterMs = Math.min(300_000, Math.max(0, now - sched.fireAt));
+                const jitterMs = Math.floor(Math.random() * maxJitterMs);
+                const simulatedCreatedAtMs = Math.min(now - 1000, sched.fireAt + jitterMs);
+                simulatedCreatedAt = new Date(simulatedCreatedAtMs).toISOString();
+            }
+
+            console.log(`[FollowUp] Firing now for session=${sched.sessionId}, count=${sched.count}, simulatedAt=${simulatedCreatedAt || "now"}`);
+            const delayMs = triggerIndex * 2500;
+            triggerIndex += 1;
+            if (delayMs > 0) {
+                bgSetTimeout(() => {
+                    void fireFollowUp(sched, simulatedCreatedAt);
+                }, delayMs);
+            } else {
+                void fireFollowUp(sched, simulatedCreatedAt);
+            }
         }
         pollTimedWakeSchedules(now);
         pollMenstrualPeriodCare(now);
@@ -481,7 +503,7 @@ function pollMenstrualPeriodCare(now: number) {
     }
 }
 
-async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?: number }) {
+async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?: number }, simulatedCreatedAt?: string) {
     const currentFollowUpConfig = loadFollowUpConfig();
     const effectiveMaxFollowUps = currentFollowUpConfig.maxFollowUps ?? 3;
     if (sched.count >= effectiveMaxFollowUps) {
@@ -529,19 +551,20 @@ async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?
             annotatedMessages.push(msg);
         }
 
-        const nowMs = Date.now();
-        const finalSilenceSec = Math.round((nowMs - lastUserTime) / 1000);
+        const isOfflineBackdate = Boolean(simulatedCreatedAt);
+        const effectiveNowMs = simulatedCreatedAt ? Date.parse(simulatedCreatedAt) : Date.now();
+        const finalSilenceSec = Math.round((effectiveNowMs - lastUserTime) / 1000);
         const isSleeping = loadChatAppSettings().userOnlineStatus === "sleeping";
         const sleepHint = isSleeping ? "【当前状态】对方目前处于「睡眠中…」状态，已经睡下了。请保持体贴与克制，尽量不要大吵大闹或长篇大论打扰对方睡眠；绝大多数情况下只输出状态值和内心独白/心声便利贴，极少数情况下若实在想念，最多只发一句极轻柔的晚安或拍一拍。" : "";
         const messagesWithHint: ChatMessage[] = [
             ...annotatedMessages,
             {
-                id: `_silence_${nowMs}`,
+                id: `_silence_${effectiveNowMs}`,
                 sessionId: session.id,
                 role: "system",
                 content: `[对方没有回复你的消息，距上次回复已过约${finalSilenceSec}秒]${sleepHint ? `\n${sleepHint}` : ""}`,
                 status: "sent",
-                createdAt: new Date().toISOString(),
+                createdAt: simulatedCreatedAt ?? new Date().toISOString(),
             },
         ];
 
@@ -558,7 +581,13 @@ async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?
             rounds = await generateBackgroundCompletionRounds(
                 session,
                 messagesWithHint,
-                { followUpCount: count, followUpDelay: sched.delaySec ?? 60, appTags: ["chat", "text", "followup"], signal: backgroundController.signal },
+                {
+                    followUpCount: count,
+                    followUpDelay: sched.delaySec ?? 60,
+                    appTags: ["chat", "text", "followup"],
+                    signal: backgroundController.signal,
+                    skipTools: isOfflineBackdate,
+                },
             );
         } finally {
             stopBailoutHeartbeat();
@@ -571,7 +600,17 @@ async function fireFollowUp(sched: { sessionId: string; count: number; delaySec?
             return;
         }
 
-        const { hasVisible, newCount, stateValues } = await saveBackgroundCompletionRounds(rounds, session.id, sched.count, count, latestMessages);
+        const { hasVisible, newCount, stateValues } = await saveBackgroundCompletionRounds(
+            rounds,
+            session.id,
+            sched.count,
+            count,
+            latestMessages,
+            simulatedCreatedAt ? { createdAt: simulatedCreatedAt } : undefined,
+        );
+        if (simulatedCreatedAt) {
+            reindexSessionMessageOrdersByTime(session.id);
+        }
         console.log(`[FollowUp] Result: hasVisible=${hasVisible}, newCount=${newCount}`);
 
         // 本地已完成这一轮，撤销服务端对应的兜底预约（只撤本轮的精确键，
